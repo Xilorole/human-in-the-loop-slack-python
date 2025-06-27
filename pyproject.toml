@@ -1,0 +1,25 @@
+[project]
+name = "human-in-the-loop-slack-python"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aiohttp>=3.12.13",
+    "click>=8.2.1",
+    "loguru>=0.7.3",
+    "mcp>=1.10.0",
+    "slack-bolt>=1.23.0",
+]
+
+
+[project.scripts]
+human-in-the-loop = "human_in_the_loop.main:main"
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "human_in_the_loop"
