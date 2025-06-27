@@ -38,13 +38,17 @@ class SlackClient:
         logger.info("Stopping Slack client...")
         await self.handler.close_async()
 
-    async def ask_human(self, question: str) -> str:
-        """Ask a human a question via Slack and wait for response."""
+    async def ask_human(self, question: str, thread_ts: str | None = None) -> tuple[str, str]:
+        """Ask a human a question via Slack and wait for response.
+        If thread_ts is provided, continue in that thread; otherwise, create a new thread.
+        Returns a tuple of (response, thread_ts).
+        """
         logger.info(f"Asking human: {question[:100]}...")
 
         try:
-            # Create a thread for this conversation
-            thread_ts = await self._create_thread(question)
+            # Use existing thread or create a new one
+            if not thread_ts:
+                thread_ts = await self._create_thread(question)
 
             # Send the question with user mention
             message_text = f"<@{self.user_id}> {question}"
@@ -57,7 +61,7 @@ class SlackClient:
             # Wait for response
             response = await self._wait_for_response(thread_ts)
             logger.info("Received response from human")
-            return response
+            return response, thread_ts
 
         except Exception as e:
             logger.error(f"Error in ask_human: {e}")
@@ -76,7 +80,9 @@ class SlackClient:
             text=f"🤖 *Question from AI Assistant*\n{thread_title}",
         )
 
-        thread_ts = result["ts"]
+        thread_ts = result.get("ts")
+        if not isinstance(thread_ts, str):
+            raise RuntimeError("Failed to get thread timestamp from Slack response.")
         self._active_threads.add(thread_ts)
         logger.debug(f"Created thread {thread_ts}")
         return thread_ts
@@ -94,9 +100,9 @@ class SlackClient:
             logger.error(f"Timeout waiting for response in thread {thread_ts}")
             raise Exception("Timeout waiting for human response")
         finally:
-            # Clean up
+            # Clean up only pending responses, but keep active_threads for follow-ups
             self._pending_responses.pop(thread_ts, None)
-            self._active_threads.discard(thread_ts)
+            # self._active_threads.discard(thread_ts)  # Do NOT remove here
 
     async def _handle_message(self, event: dict, say) -> None:
         """Handle incoming Slack messages."""
@@ -132,6 +138,6 @@ class HumanInterface:
     def __init__(self, slack_client: SlackClient):
         self.slack_client = slack_client
 
-    async def ask(self, question: str) -> str:
-        """Ask a human a question and return their response."""
-        return await self.slack_client.ask_human(question)
+    async def ask(self, question: str, thread_ts: str | None = None) -> tuple[str, str]:
+        """Ask a human a question and return their response and thread_ts."""
+        return await self.slack_client.ask_human(question, thread_ts)

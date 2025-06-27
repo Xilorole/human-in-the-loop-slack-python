@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field
 class HumanInterface(Protocol):
     """Protocol for human interaction interface."""
 
-    async def ask(self, question: str) -> str:
-        """Ask a human a question and return their response."""
+    async def ask(self, question: str, thread_ts: str | None = None) -> tuple[str, str]:
+        """Ask a human a question and return their response and thread_ts."""
         ...
 
 
@@ -21,6 +21,10 @@ class AskHumanRequest(BaseModel):
     question: str = Field(
         description="The question to ask the human. Be specific and provide context "
         "to help the human understand what information you need."
+    )
+    thread_ts: str | None = Field(
+        default=None,
+        description="Slack thread timestamp to continue the conversation in the same thread. Leave blank to start a new thread."
     )
 
 
@@ -74,12 +78,15 @@ class HumanTools:
             # Validate request
             request = AskHumanRequest(**arguments)
 
-            # Ask the human
+            # Ask the human, get response and thread_ts
             logger.info(f"Asking human: {request.question[:50]}...")
-            response = await self.human_interface.ask(request.question)
+            response, thread_ts = await self.human_interface.ask(request.question, request.thread_ts)
 
-            # Return response as text content
-            return [types.TextContent(type="text", text=response)]
+            # Return response and thread_ts as a JSON string in text
+            import json
+            return [
+                types.TextContent(type="text", text=json.dumps({"response": response, "thread_ts": thread_ts}))
+            ]
 
         except Exception as e:
             logger.error(f"Error in ask_human tool: {e}")
