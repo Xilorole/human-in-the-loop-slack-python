@@ -1,15 +1,16 @@
 """Utilities for formatting Slack messages with Block Kit."""
 
-from typing import Dict, List, Optional
-
+# Use built-in types and new union syntax per PEP 585/604
 from loguru import logger
+
+MAX_THREAD_TITLE_LENGTH = 100  # Named constant for magic value
 
 
 def format_question_blocks(
     question: str,
-    user_id: Optional[str] = None,
-    thread_title: Optional[str] = None,
-) -> List[Dict]:
+    user_id: str | None = None,
+    thread_title: str | None = None,
+) -> list[dict]:
     """Format a question using Slack Block Kit with improved structure and clarity.
 
     Args:
@@ -19,11 +20,12 @@ def format_question_blocks(
 
     Returns:
         List of Block Kit blocks
+
     """
     # If thread_title not provided, use first part of question
     if not thread_title:
-        thread_title = question[:100].strip()
-        if len(question) > 100:
+        thread_title = question[:MAX_THREAD_TITLE_LENGTH].strip()
+        if len(question) > MAX_THREAD_TITLE_LENGTH:
             thread_title += "..."
 
     blocks = [
@@ -72,7 +74,7 @@ def format_question_blocks(
     return blocks
 
 
-def format_thread_initial_message(thread_title: str) -> List[Dict]:
+def format_thread_initial_message(thread_title: str) -> list[dict]:
     """Format the initial thread message using Block Kit with improved clarity.
 
     Args:
@@ -80,6 +82,7 @@ def format_thread_initial_message(thread_title: str) -> List[Dict]:
 
     Returns:
         List of Block Kit blocks
+
     """
     return [
         {
@@ -108,6 +111,7 @@ def plain_text_to_mrkdwn(text: str) -> str:
 
     Returns:
         Text formatted for Slack's mrkdwn
+
     """
     try:
         # Replace code blocks
@@ -131,6 +135,6 @@ def plain_text_to_mrkdwn(text: str) -> str:
                 formatted_lines.append(line)
 
         return "\n".join(formatted_lines)
-    except Exception as e:
+    except (ValueError, AttributeError) as e:
         logger.error(f"Error formatting markdown: {e}")
         return text  # Return original text if formatting fails

@@ -1,7 +1,6 @@
 """Slack client for human-in-the-loop communication."""
 
 import asyncio
-from typing import Dict, Set
 
 from loguru import logger
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
@@ -12,7 +11,10 @@ from slack_sdk.web.async_client import AsyncWebClient
 class SlackClient:
     """Handles Slack communication for human-in-the-loop interactions."""
 
-    def __init__(self, app_token: str, bot_token: str, channel_id: str, user_id: str):
+    MAX_THREAD_TITLE_LENGTH = 100
+
+    def __init__(self, app_token: str, bot_token: str, channel_id: str, user_id: str) -> None:
+        """Initialize SlackClient with tokens and channel/user IDs."""
         self.channel_id = channel_id
         self.user_id = user_id
         self.app = AsyncApp(token=bot_token)
@@ -20,8 +22,8 @@ class SlackClient:
         self.client = AsyncWebClient(token=bot_token)
 
         # Track active conversations
-        self._pending_responses: Dict[str, asyncio.Future[str]] = {}
-        self._active_threads: Set[str] = set()
+        self._pending_responses: dict[str, asyncio.Future[str]] = {}
+        self._active_threads: set[str] = set()
 
         # Setup message event handler
         self.app.event("message")(self._handle_message)
@@ -40,6 +42,7 @@ class SlackClient:
 
     async def ask_human(self, question: str, thread_ts: str | None = None) -> tuple[str, str]:
         """Ask a human a question via Slack and wait for response.
+
         If thread_ts is provided, continue in that thread; otherwise, create a new thread.
         Returns a tuple of (response, thread_ts).
         """
@@ -61,17 +64,16 @@ class SlackClient:
             # Wait for response
             response = await self._wait_for_response(thread_ts)
             logger.info("Received response from human")
-            return response, thread_ts
-
         except Exception as e:
             logger.error(f"Error in ask_human: {e}")
             raise
+        else:
+            return response, thread_ts
 
     async def _create_thread(self, question: str) -> str:
         """Create a thread for the conversation."""
-        # Use first 100 characters of question as thread title
-        thread_title = question[:100].strip()
-        if len(question) > 100:
+        thread_title = question[: self.MAX_THREAD_TITLE_LENGTH].strip()
+        if len(question) > self.MAX_THREAD_TITLE_LENGTH:
             thread_title += "..."
 
         # Post initial message to create thread
@@ -82,29 +84,28 @@ class SlackClient:
 
         thread_ts = result.get("ts")
         if not isinstance(thread_ts, str):
-            raise RuntimeError("Failed to get thread timestamp from Slack response.")
+            msg = "Failed to get thread timestamp from Slack response."
+            raise TypeError(msg)
         self._active_threads.add(thread_ts)
         logger.debug(f"Created thread {thread_ts}")
         return thread_ts
 
-    async def _wait_for_response(self, thread_ts: str, timeout: int = 600) -> str:
+    async def _wait_for_response(self, thread_ts: str) -> str:
         """Wait for a human response in the specified thread."""
         future = asyncio.Future[str]()
         self._pending_responses[thread_ts] = future
 
         try:
             # Wait for response with timeout (10 minutes default)
-            response = await asyncio.wait_for(future, timeout=timeout)
-            return response
-        except asyncio.TimeoutError:
+            return await asyncio.wait_for(future, timeout=600)
+        except TimeoutError as err:
             logger.error(f"Timeout waiting for response in thread {thread_ts}")
-            raise Exception("Timeout waiting for human response")
+            msg = "Timeout waiting for human response"
+            raise RuntimeError(msg) from err
         finally:
-            # Clean up only pending responses, but keep active_threads for follow-ups
             self._pending_responses.pop(thread_ts, None)
-            # self._active_threads.discard(thread_ts)  # Do NOT remove here
 
-    async def _handle_message(self, event: dict, say) -> None:
+    async def _handle_message(self, event: dict) -> None:
         """Handle incoming Slack messages."""
         try:
             # Only process messages from the specified user
@@ -128,14 +129,15 @@ class SlackClient:
                     future.set_result(message_text)
                     logger.debug(f"Received response in thread {thread_ts}")
 
-        except Exception as e:
+        except (TypeError, ValueError) as e:
             logger.error(f"Error handling message: {e}")
 
 
 class HumanInterface:
     """Interface for asking humans questions."""
 
-    def __init__(self, slack_client: SlackClient):
+    def __init__(self, slack_client: SlackClient) -> None:
+        """Initialize HumanInterface with a SlackClient."""
         self.slack_client = slack_client
 
     async def ask(self, question: str, thread_ts: str | None = None) -> tuple[str, str]:

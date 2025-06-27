@@ -1,6 +1,7 @@
 """MCP tools for human-in-the-loop interactions."""
 
-from typing import Any, Dict, List, Protocol
+import json
+from typing import Any, Protocol
 
 from loguru import logger
 from mcp import types
@@ -24,18 +25,21 @@ class AskHumanRequest(BaseModel):
     )
     thread_ts: str | None = Field(
         default=None,
-        description="Slack thread timestamp to continue the conversation in the same thread. Leave blank to start a new thread."
+        description=(
+            "Slack thread timestamp to continue the conversation in the same thread. Leave blank to start a new thread."
+        ),
     )
 
 
 class HumanTools:
     """Collection of human-in-the-loop tools."""
 
-    def __init__(self, human_interface: HumanInterface):
+    def __init__(self, human_interface: HumanInterface) -> None:
+        """Initialize HumanTools with a human interface."""
         self.human_interface = human_interface
         logger.info("Human tools initialized")
 
-    def get_tools(self) -> List[types.Tool]:
+    def get_tools(self) -> list[types.Tool]:
         """Get all available tools."""
         return [
             types.Tool(
@@ -61,18 +65,16 @@ class HumanTools:
             )
         ]
 
-    async def call_tool(
-        self, name: str, arguments: Dict[str, Any]
-    ) -> List[types.TextContent]:
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> list[types.TextContent]:
         """Call a tool with the given arguments."""
         logger.info(f"Calling tool: {name}")
 
         if name == "ask_human":
             return await self._ask_human(arguments)
-        else:
-            raise ValueError(f"Unknown tool: {name}")
+        msg = f"Unknown tool: {name}"
+        raise ValueError(msg)
 
-    async def _ask_human(self, arguments: Dict[str, Any]) -> List[types.TextContent]:
+    async def _ask_human(self, arguments: dict[str, Any]) -> list[types.TextContent]:
         """Handle ask_human tool call."""
         try:
             # Validate request
@@ -83,12 +85,9 @@ class HumanTools:
             response, thread_ts = await self.human_interface.ask(request.question, request.thread_ts)
 
             # Return response and thread_ts as a JSON string in text
-            import json
-            return [
-                types.TextContent(type="text", text=json.dumps({"response": response, "thread_ts": thread_ts}))
-            ]
+            return [types.TextContent(type="text", text=json.dumps({"response": response, "thread_ts": thread_ts}))]
 
-        except Exception as e:
+        except (TypeError, ValueError) as e:
             logger.error(f"Error in ask_human tool: {e}")
-            error_message = f"Error asking human: {str(e)}"
+            error_message = f"Error asking human: {e!s}"
             return [types.TextContent(type="text", text=error_message)]
